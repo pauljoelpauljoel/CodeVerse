@@ -1,7 +1,5 @@
-services:
-  - type: web
-    name: CodeVerse
-    env: static
+staticSites:
+  - name: CodeVerse
     buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    plan: free
+    publishDir: dist
+    branch: main
