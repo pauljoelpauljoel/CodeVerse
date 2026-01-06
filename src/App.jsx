@@ -10,24 +10,48 @@ import LZString from 'lz-string';
 
 function App() {
   // Load initial state from localStorage or default
+  // Load initial state from URL or localStorage or default
   const getInitialState = () => {
-    const savedSession = localStorage.getItem('currentSession');
-    let initialLang = LANGUAGES[0];
-    let initialCode = LANGUAGES[0].defaultValue;
+    // 1. Priority: URL Parameters (for new tabs/sharing)
+    const params = new URLSearchParams(window.location.search);
+    const sharedLangId = params.get('lang');
+    const sharedCode = params.get('code');
 
+    if (sharedLangId) {
+      const foundLang = LANGUAGES.find(l => l.id === sharedLangId);
+      if (foundLang) {
+        let initialCode = foundLang.defaultValue;
+        if (sharedCode) {
+          try {
+            const decompressed = LZString.decompressFromEncodedURIComponent(sharedCode);
+            if (decompressed) initialCode = decompressed;
+          } catch (e) {
+            console.error("Failed to parse shared code", e);
+          }
+        }
+        return { language: foundLang, code: initialCode };
+      }
+    }
+
+    // 2. Priority: Saved Session (localStorage)
+    const savedSession = localStorage.getItem('currentSession');
     if (savedSession) {
       try {
         const parsed = JSON.parse(savedSession);
         const foundLang = LANGUAGES.find(l => l.id === parsed.languageId);
         if (foundLang) {
-          initialLang = foundLang;
-          initialCode = parsed.code || foundLang.defaultValue;
+          return {
+            language: foundLang,
+            code: parsed.code || foundLang.defaultValue
+          };
         }
       } catch (e) {
         console.error("Failed to parse session", e);
       }
     }
-    return { language: initialLang, code: initialCode };
+
+    // 3. Fallback: Default
+    return { language: LANGUAGES[0], code: LANGUAGES[0].defaultValue };
   };
 
   const initialState = getInitialState();
@@ -83,23 +107,6 @@ function App() {
       }
     }
 
-    // URL parsing logic
-    const params = new URLSearchParams(window.location.search);
-    const sharedCode = params.get('code');
-    const sharedLangId = params.get('lang');
-
-    if (sharedCode && sharedLangId) {
-      try {
-        const decompressedCode = LZString.decompressFromEncodedURIComponent(sharedCode);
-        const lang = LANGUAGES.find(l => l.id === sharedLangId);
-        if (lang && decompressedCode) {
-          setLanguage(lang);
-          setCode(decompressedCode);
-        }
-      } catch (e) {
-        console.error("Failed to load shared code", e);
-      }
-    }
   }, []);
 
 
@@ -146,6 +153,7 @@ function App() {
       setOutput(error.message);
     } finally {
       setIsRunning(false);
+      setInputValue(''); // Clear input so next run prompts again
     }
   };
 

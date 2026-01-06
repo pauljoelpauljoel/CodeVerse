@@ -1,3 +1,4 @@
+import logo from '../assets/mix-n-fix-logo.jpg';
 import React from 'react';
 import { FaPlay, FaShareAlt, FaCode, FaHistory, FaJava, FaSun, FaMoon } from 'react-icons/fa';
 import { SiJavascript, SiPython, SiCplusplus, SiC } from 'react-icons/si';
@@ -27,9 +28,9 @@ const Header = ({ language, setLanguage, onRun, onShare, onToggleHistory, isRunn
         >
             {/* Logo Area */}
             <div className="flex-center" style={{ gap: '0.75rem', marginRight: 'auto' }}>
-                <FaCode size={28} color="var(--accent-primary)" />
-                <h1 style={{ fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.5px' }}>
-                    Code<span style={{ color: "var(--accent-primary)" }}>Verse</span>
+                <img src={logo} alt="Mix-N-Fix Logo" style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} />
+                <h1 style={{ fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
+                    ⚡MIX-N-FIX-COMPILER ⚡
                 </h1>
             </div>
 
@@ -48,7 +49,10 @@ const Header = ({ language, setLanguage, onRun, onShare, onToggleHistory, isRunn
                     return (
                         <button
                             key={lang.id}
-                            onClick={() => setLanguage(lang)}
+                            onClick={() => {
+                                const url = `${window.location.origin}${window.location.pathname}?lang=${lang.id}`;
+                                window.open(url, '_blank');
+                            }}
                             style={{
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -61,7 +65,8 @@ const Header = ({ language, setLanguage, onRun, onShare, onToggleHistory, isRunn
                                 border: isActive ? 'none' : '1px solid var(--glass-border)',
                                 minWidth: '80px',
                                 transition: 'all 0.2s ease',
-                                flexShrink: 0
+                                flexShrink: 0,
+                                cursor: 'pointer'
                             }}
                         >
                             <span style={{ fontSize: '0.75rem', fontWeight: '600' }}>{lang.name}</span>
