@@ -143,3 +143,19 @@ button:active {
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
+
+@keyframes sway {
+
+  0%,
+  100% {
+    transform: translateX(-10px);
+  }
+
+  50% {
+    transform: translateX(10px);
+  }
+}
+
+.sway-animation {
+  animation: sway 3s ease-in-out infinite;
+}

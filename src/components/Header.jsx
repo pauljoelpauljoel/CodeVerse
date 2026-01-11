@@ -27,10 +27,28 @@ const Header = ({ language, setLanguage, onRun, onShare, onToggleHistory, isRunn
             }}
         >
             {/* Logo Area */}
-            <div className="flex-center" style={{ gap: '0.75rem', marginRight: 'auto' }}>
-                <img src={logo} alt="Mix-N-Fix Logo" style={{ width: '40px', height: '40px', borderRadius: '8px', objectFit: 'cover' }} />
-                <h1 style={{ fontSize: '1.5rem', fontWeight: '700', letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
-                    ⚡MIX-N-FIX-COMPILER ⚡
+            <div className="flex-center" style={{ gap: '1.5rem', marginRight: 'auto' }}>
+                <img src={logo} alt="Mix-N-Fix Logo" style={{
+                    width: '110px',
+                    height: '110px',
+                    borderRadius: '12px',
+                    objectFit: 'cover',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                    border: '2px solid rgba(255,255,255,0.1)',
+                    transition: 'transform 0.3s ease'
+                }}
+                    onMouseOver={(e) => e.target.style.transform = 'scale(1.05)'}
+                    onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+                />
+                <h1 className="sway-animation" style={{
+                    fontSize: '1.8rem',
+                    fontWeight: '900',
+                    letterSpacing: '-1px', // Tight spacing like the logo
+                    fontFamily: "'Montserrat', sans-serif",
+                    color: 'var(--text-primary)',
+                    // Removed Gold Gradient & Shadow as requested
+                }}>
+                    Mix-N-Fix-COMPILER
                 </h1>
             </div>
 

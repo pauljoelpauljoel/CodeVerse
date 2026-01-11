@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Editor as MonacoEditor } from "@monaco-editor/react";
 
-const Editor = ({ language, code, onChange }) => {
+const Editor = ({ language, code, onChange, theme }) => {
     // Map common language names to Monaco identifiers if needed
     // For now, our ids in languages.js (javascript, python, java, cpp) match Monaco's usually.
     // C++ in monaco is 'cpp'. Java is 'java'. Python is 'python'. Javascript is 'javascript'.
@@ -16,7 +16,7 @@ const Editor = ({ language, code, onChange }) => {
                 height="100%"
                 language={language}
                 value={code}
-                theme="vs-dark"
+                theme={theme === 'light' ? 'light' : 'vs-dark'}
                 onChange={handleEditorChange}
                 options={{
                     minimap: { enabled: false },

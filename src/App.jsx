@@ -1,15 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Header from './components/Header';
 import Editor from './components/Editor';
 import OutputPanel from './components/OutputPanel';
 import HistorySidebar from './components/HistorySidebar';
-import InputModal from './components/InputModal';
+// import InputModal from './components/InputModal'; // Removed as per simplified Programiz style
 import { LANGUAGES } from './constants/languages';
-import { runCode, checkInputRequirement, extractPrompts } from './utils/executionEngine';
+import { runCode } from './utils/executionEngine';
 import LZString from 'lz-string';
 
 function App() {
-  // Load initial state from localStorage or default
   // Load initial state from URL or localStorage or default
   const getInitialState = () => {
     // 1. Priority: URL Parameters (for new tabs/sharing)
@@ -58,6 +57,15 @@ function App() {
   const [language, setLanguage] = useState(initialState.language);
   const [code, setCode] = useState(initialState.code);
 
+  // Clear query parameters after initial load so refresh doesn't reset state
+  useEffect(() => {
+    if (window.location.search) {
+      const url = new URL(window.location);
+      url.search = '';
+      window.history.replaceState({}, '', url);
+    }
+  }, []);
+
   // Save session on change
   useEffect(() => {
     localStorage.setItem('currentSession', JSON.stringify({
@@ -87,8 +95,9 @@ function App() {
 
   // Input State
   const [inputValue, setInputValue] = useState('');
-  const [showInputModal, setShowInputModal] = useState(false);
-  const [inputHints, setInputHints] = useState([]);
+  const [isWaitingForInput, setIsWaitingForInput] = useState(false);
+  const [inputPrompt, setInputPrompt] = useState('');
+  const inputResolverRef = useRef(null); // To store the promise resolve function
 
   // History State
   const [history, setHistory] = useState([]);
@@ -136,59 +145,82 @@ function App() {
     setCode(newUiLanguage.defaultValue);
     setOutput(null);
     setShowSavePrompt(false);
+    setIsWaitingForInput(false);
+    setInputPrompt('');
+    setInputValue('');
   };
 
-  const executeCode = async (finalInput) => {
+  const handleClearOutput = () => {
+    setOutput(null);
+    setIsError(false);
+    setShowSavePrompt(false);
+    setIsWaitingForInput(false);
+  };
+
+  // Callback to show input UI
+  const requestInput = (promptText) => {
+    return new Promise((resolve) => {
+      setInputPrompt(promptText);
+      setIsWaitingForInput(true);
+      // Scroll to bottom of output to ensure input is visible could be good, but panel handles overflow
+      inputResolverRef.current = resolve;
+    });
+  };
+
+  const handleInputSubmit = (value) => {
+    setIsWaitingForInput(false);
+    setInputPrompt('');
+    setInputValue(''); // Clear input box
+
+    // Add the user's input to the output display immediately so it looks like a terminal history
+    setOutput(prev => (prev || "") + value + "\n");
+
+    if (inputResolverRef.current) {
+      inputResolverRef.current(value);
+      inputResolverRef.current = null;
+    }
+  };
+
+  const executeCode = async () => {
     setIsRunning(true);
     setIsError(false);
-    setOutput(null);
+    setOutput(null); // Clear previous output on new run
     setShowSavePrompt(false);
+    setIsWaitingForInput(false);
 
     try {
-      const result = await runCode(language.id, code, finalInput);
-      setOutput(result);
+      const callbacks = {
+        requestInput: requestInput
+      };
+
+      const result = await runCode(language.id, code, "", callbacks);
+
+      setOutput(prev => (prev ? prev + "\n" : "") + result + "\n\n=== Code Execution Successful ===");
       setShowSavePrompt(true);
     } catch (error) {
       setIsError(true);
       setOutput(error.message);
     } finally {
       setIsRunning(false);
-      setInputValue(''); // Clear input so next run prompts again
+      setInputValue('');
     }
   };
 
   const handleRunCode = () => {
-    // Check if input is likely needed but not provided
-    const needsInput = checkInputRequirement(language.id, code);
-    if (needsInput && (!inputValue || inputValue.trim() === '')) {
-      const hints = extractPrompts(language.id, code);
-      setInputHints(hints);
-      setShowInputModal(true);
-      return;
-    }
-
-    // Otherwise run directly
-    executeCode(inputValue);
+    executeCode(); // No initial input needed, we ask for it if required
   };
 
-  const handleModalSubmit = (inputFromModal) => {
-    setInputValue(inputFromModal); // Update the visual input box too
-    setShowInputModal(false);
-    executeCode(inputFromModal);
-  };
-
-  const handleShare = () => {
-    // No auto save on share
-    // saveToHistory(code, language.name);
-
+  const handleShare = async () => {
     const compressedCode = LZString.compressToEncodedURIComponent(code);
     const url = `${window.location.origin}${window.location.pathname}?code=${compressedCode}&lang=${language.id}`;
 
-    navigator.clipboard.writeText(url).then(() => {
+    try {
+      await navigator.clipboard.writeText(url);
       alert("Link copied to clipboard!");
-    }).catch(err => {
+    } catch (err) {
       console.error('Could not copy text: ', err);
-    });
+      alert("Failed to copy link.");
+    }
   };
 
   return (
@@ -206,12 +238,7 @@ function App() {
         onDelete={handleDeleteHistory}
       />
 
-      <InputModal
-        isOpen={showInputModal}
-        onClose={() => setShowInputModal(false)}
-        onSubmit={handleModalSubmit}
-        inputHints={inputHints}
-      />
+      {/* InputModal removed */}
 
       <div style={{ flexShrink: 0 }}>
         <Header
@@ -226,17 +253,15 @@ function App() {
         />
       </div>
 
-      <div style={{ display: 'flex', flex: 1, gap: '1rem', overflow: 'hidden' }}>
-        {/* Editor Section */}
+      <main className="main-content" style={{ display: 'flex', flex: 1, gap: '1rem', overflow: 'hidden' }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <Editor
             language={language.id}
             code={code}
             onChange={setCode}
+            theme={theme}
           />
         </div>
-
-        {/* Output Section */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <OutputPanel
             output={output}
@@ -248,11 +273,16 @@ function App() {
               setShowSavePrompt(false);
               alert("Saved to History!");
             }}
+            onClear={handleClearOutput}
             inputValue={inputValue}
             onInputChange={setInputValue}
+            isWaitingForInput={isWaitingForInput}
+            onInputSubmit={handleInputSubmit}
+            inputPrompt={inputPrompt}
+            theme={theme}
           />
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -93,8 +93,8 @@ export const checkInputRequirement = (languageId, code) => {
     if (languageId === 'java' && (code.includes('Scanner') || code.includes('System.in'))) return true;
     if (languageId === 'cpp' && (code.includes('cin') || code.includes('getline'))) return true;
     if (languageId === 'c' && (code.includes('scanf') || code.includes('gets') || code.includes('getchar'))) return true;
-    if (languageId === 'python' && (code.includes('input('))) return true;
-    if (languageId === 'javascript' && (code.includes('prompt('))) return true;
+    if (languageId === 'python' && (code.includes('input('))) return false; // Allowed to run interactively
+    if (languageId === 'javascript' && (code.includes('prompt('))) return false; // Allowed to run interactively
     return false;
 };
 
@@ -103,54 +103,45 @@ export const extractPrompts = (languageId, code) => {
     let regex;
 
     if (languageId === 'java') {
+        // Matches System.out.print("...") or println("...")
         regex = /System\.out\.print(?:ln)?\s*\(\s*"([^"]+)"/g;
     } else if (languageId === 'cpp') {
+        // Matches cout << "..."
         regex = /cout\s*<<\s*"([^"]+)"/g;
     } else if (languageId === 'c') {
+        // Matches printf("...")
         regex = /printf\s*\(\s*"([^"]+)"/g;
-    } else if (languageId === 'python') {
-        regex = /input\s*\(\s*"([^"]+)"/g;
-    } else if (languageId === 'javascript') {
-        regex = /prompt\s*\(\s*"([^"]+)"/g;
     }
 
     if (regex) {
         let match;
         while ((match = regex.exec(code)) !== null) {
             const str = match[1];
-            // Filter: Only keep it if it looks like a question/input prompt
             const lower = str.toLowerCase();
 
-            // For Python/JS, the regex matches input()/prompt(), so EVERYTHING inside is a prompt.
-            // For Java/C/C++, the regex matches ALL prints, so we need STRICT filtering.
-
-            const isStrictLang = (languageId === 'java' || languageId === 'cpp' || languageId === 'c');
-
-            if (isStrictLang) {
-                // Strict Mode: Must have "enter", "input", "type" OR end with "?"
-                // We specifically REMOVE the check for endsWith(':') to avoid matching output labels like "Name:"
-                if (lower.includes('enter') || lower.includes('input') || lower.includes('type') || str.trim().endsWith('?')) {
-                    prompts.push(str);
-                }
-            } else {
-                // Loose Mode (Python/JS): Accept almost anything since we know it's inside input()
-                // We keep the filter slightly just to be safe, but include ':'
-                if (lower.includes('enter') || lower.includes('input') || lower.includes('type') || str.trim().endsWith(':') || str.trim().endsWith('?')) {
-                    prompts.push(str);
-                } else {
-                    // Even if it doesn't match keywords, for Python/JS we probably still want it 
-                    // because why would you input("Result: ")? 
-                    // But let's stick to the heuristic to be safe, or just push it.
-                    // Let's push it, trusting the user uses input() for inputs.
-                    prompts.push(str);
-                }
+            // Heuristic: It's likely a prompt if it contains keywords or ends with typical punctuation
+            // We want to capture things like:
+            // "Enter number: "
+            // "Input value:"
+            // "Age?"
+            if (
+                lower.includes('enter') ||
+                lower.includes('input') ||
+                lower.includes('type') ||
+                str.trim().endsWith(':') ||
+                str.trim().endsWith('?') ||
+                str.trim().endsWith('>')
+            ) {
+                prompts.push(str);
             }
         }
     }
     return prompts;
 };
 
-export const runCode = async (languageId, code, stdin = "") => {
+export const runCode = async (languageId, code, stdin = "", callbacks = {}) => {
+    // callbacks: { requestInput: async (promptText) => string }
+
     try {
         if (languageId === 'javascript') {
             // Safe(r) execution for JS: Capture console.log
@@ -170,12 +161,14 @@ export const runCode = async (languageId, code, stdin = "") => {
                 ).join(' '));
             };
 
-            // Override prompt to use stdin
+            // Override prompt to use stdin or callback if available
             window.prompt = (message) => {
+                // Not easily async-awaitable in synchronous JS execution (new Function)
+                // blocking prompt is the only way for synchronous JS unfortunately without Service Workers
                 if (inputIndex < inputs.length) {
                     return inputs[inputIndex++];
                 }
-                return ""; // Default empty if no input provided
+                return originalPrompt(message);
             };
 
             try {
@@ -191,25 +184,83 @@ export const runCode = async (languageId, code, stdin = "") => {
             return logs.join('\n') || "Program executed successfully (no output).";
 
         } else if (languageId === 'python') {
-            // Check if we have stdin or input() usage
-            if (stdin || code.includes('input(')) {
-                // If using modal inputs, we MUST use Piston (Server) 
-                // because Pyodide (Client) 'input()' blocks the browser thread and requires window.prompt
-                return await executeWithPiston('python', code, stdin);
-            }
-
-            // Otherwise, Use Pyodide for Client-side speed (if simple script)
+            // Pyodide Execution
             const pyodide = await getPyodide();
+
+            // Python input() is synchronous. We can't easily await a React UI callback.
+            // We'll stick to window.prompt for Python OR we could try to implement a SharedArrayBuffer approach if we had more time.
+            // For now, let's keep Python with window.prompt but maybe we can hook it?
+            // Actually, let's just use window.prompt for Python for now to be safe, 
+            // OR if the user wants uniformity, we can try to use the callback if we can make it blocking (which we can't easily in main thread).
+            // Retaining window.prompt for Python as per plan fallback.
+
+            const pythonInputSetup = `
+import js
+import builtins
+
+def custom_input(prompt=""):
+    val = js.prompt(prompt if prompt else "")
+    return val if val else ""
+
+builtins.input = custom_input
+`;
+
+            await pyodide.runPythonAsync(pythonInputSetup);
+
             pyodide.setStdout({ batched: (msg) => { } });
             let output = [];
             pyodide.setStdout({ batched: (msg) => output.push(msg) });
             pyodide.setStderr({ batched: (msg) => output.push(`Error: ${msg}`) });
-            await pyodide.runPythonAsync(code);
+
+            try {
+                await pyodide.runPythonAsync(code);
+            } catch (e) {
+                output.push(`Error: ${e.message}`);
+            }
+
             return output.join('\n');
 
         } else if (languageId === 'java' || languageId === 'cpp' || languageId === 'c') {
-            // Directly Run with Provided Stdin
-            let output = await executeWithPiston(languageId, code, stdin);
+            // --- PRE-EXECUTION INPUT COLLECTION ("Simulated Interactive") ---
+
+            // 1. Detect Prompts ("Enter number:")
+            const detectedPrompts = extractPrompts(languageId, code);
+            const collectedInputs = [];
+
+            // 2. Interactive Loop via Callback (Async!)
+            if (detectedPrompts.length > 0) {
+                for (const promptText of detectedPrompts) {
+                    if (callbacks.requestInput) {
+                        // Use the UI-based input method
+                        const userVal = await callbacks.requestInput(promptText);
+                        collectedInputs.push(userVal !== null ? userVal : "");
+                    } else {
+                        // Fallback to window.prompt
+                        const userVal = window.prompt(promptText);
+                        collectedInputs.push(userVal !== null ? userVal : "");
+                    }
+                }
+            } else {
+                // 3. Fallback: If NO prompts found but code looks like it needs input
+                if (checkInputRequirement(languageId, code) && !stdin) {
+                    if (callbacks.requestInput) {
+                        const genericInput = await callbacks.requestInput("This program appears to require input.\nPlease enter all inputs needed, separated by lines:");
+                        if (genericInput) collectedInputs.push(genericInput);
+                    } else {
+                        const genericInput = window.prompt("This program appears to require input.\nPlease enter all inputs needed, separated by lines:");
+                        if (genericInput) collectedInputs.push(genericInput);
+                    }
+                }
+            }
+
+            // 4. Construct Final Stdin
+            let finalStdin = stdin;
+            if (collectedInputs.length > 0) {
+                finalStdin = collectedInputs.join('\n');
+            }
+
+            // 5. Execute with Piston
+            let output = await executeWithPiston(languageId, code, finalStdin);
 
             // Smart Error Helper for Java Scanner
             if (languageId === 'java' && output.includes("java.util.NoSuchElementException")) {
@@ -217,19 +268,9 @@ export const runCode = async (languageId, code, stdin = "") => {
             }
 
             // --- OUTPUT CLEANING ---
-            // Remove the prompts ("Enter name:") that are printed back by Piston
-            // because prompts are useful for interactive terminals but redundant here
-            const potentialPrompts = extractPrompts(languageId, code);
-
-            // We iterate through prompts and remove their *first* occurrence from output
-            // This is a heuristic. It assumes the program prints the prompt then waits.
-            // Piston output usually includes everything printed to stdout.
-            potentialPrompts.forEach(prompt => {
-                // We trim the prompt to match what might be in output roughly
+            detectedPrompts.forEach(prompt => {
                 const trimmedPrompt = prompt.trim();
-                // Simple string replace for the first occurrence
-                // We use replace() which only replaces the first match
-                // We try to match the prompt string exactly as defined in code
+                // Heuristic removal of prompts from output since we already showed them
                 if (output.includes(prompt)) {
                     output = output.replace(prompt, "");
                 }
