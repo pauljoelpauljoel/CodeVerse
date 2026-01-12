@@ -10,6 +10,13 @@ const Editor = ({ language, code, onChange, theme }) => {
         onChange(value);
     };
 
+    const handleEditorDidMount = (editor, monaco) => {
+        // Disable Copy Command (Ctrl+C / Cmd+C)
+        editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyC, () => {
+            // Do nothing to prevent copying
+        });
+    };
+
     return (
         <div className="glass" style={{ height: "100%", width: "100%", overflow: "hidden", borderRadius: "var(--border-radius)" }}>
             <MonacoEditor
@@ -18,7 +25,9 @@ const Editor = ({ language, code, onChange, theme }) => {
                 value={code}
                 theme={theme === 'light' ? 'light' : 'vs-dark'}
                 onChange={handleEditorChange}
+                onMount={handleEditorDidMount}
                 options={{
+                    contextmenu: false,
                     minimap: { enabled: false },
                     fontSize: 16,
                     fontFamily: "'Fira Code', monospace",
