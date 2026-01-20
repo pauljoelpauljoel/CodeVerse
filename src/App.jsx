@@ -195,11 +195,17 @@ function App() {
 
       const result = await runCode(language.id, code, "", callbacks);
 
-      setOutput(prev => (prev ? prev + "\n" : "") + result + "\n\n=== Code Execution Successful ===");
+      // Check for error keywords in the result string from the engine
+      const isRuntimeError = result.startsWith("Error:") || result.startsWith("Runtime Error:");
+      const statusMessage = isRuntimeError ? "=== Code Execution With Error ===" : "=== Code Execution Successful ===";
+
+      if (isRuntimeError) setIsError(true);
+
+      setOutput(prev => (prev ? prev + "\n" : "") + result + "\n\n" + statusMessage);
       setShowSavePrompt(true);
     } catch (error) {
       setIsError(true);
-      setOutput(error.message);
+      setOutput(error.message + "\n\n=== Code Execution With Error ===");
     } finally {
       setIsRunning(false);
       setInputValue('');
